@@ -1,0 +1,62 @@
+name: Salesforce Code Analyzer
+
+on:
+  pull_request:
+    types: [opened, edited, synchronized, reopened]
+  workflow_dispatch:
+
+jobs:
+  salesforce-code-analyzer:
+    permissions:
+      pull-requests: write     # needed to post PR review
+      contents: read           # to checkout code
+      actions: read
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v5
+      with:
+        node-version: '>=20.9.0'
+
+    - name: Set up Java
+      uses: actions/setup-java@v5
+      with:
+        java-version: '>=11'
+        distribution: 'zulu'
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '>=3.10'
+
+    - name: Install Salesforce CLI
+      run: npm install -g @salesforce/cli@latest
+
+    - name: Install Salesforce Code Analyzer plugin
+      run: sf plugins install code-analyzer@latest
+
+    - name: Run Salesforce Code Analyzer
+      id: run-code-analyzer
+      uses: forcedotcom/run-code-analyzer@v2
+      with:
+        run-arguments: > 
+          --workspace . 
+          --view detail 
+          --output-file sfca_results.json
+          --output-file sfca_results.html
+        results-artifact-name: salesforce-code-analyzer-results
+        github-token: ${{ github.token }}
+
+    - name: Fail build on too many violations
+      if: |
+        steps.run-code-analyzer.outputs.exit-code != '0' ||
+        steps.run-code-analyzer.outputs.num-sev1-violations != '0' ||
+        steps.run-code-analyzer.outputs.num-sev2-violations != '0' ||
+        steps.run-code-analyzer.outputs.num-violations | fromJson > 10
+      run: exit 1
