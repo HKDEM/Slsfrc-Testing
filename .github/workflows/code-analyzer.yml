@@ -1,3 +1,5 @@
+name: Salesforce Code Analyzer
+
 on:
   push:
     branches:
@@ -50,7 +52,7 @@ jobs:
 
       - name: Run Salesforce Code Analyzer Scan
         run: |
-          sf code-analyzer run --target "./force-app" --view detail --format sarif --output-file sfca_results.sarif
+          sf code-analyzer run --output-file sfca_results.sarif
 
       - name: Upload SARIF file to GitHub
         uses: github/codeql-action/upload-sarif@v3
