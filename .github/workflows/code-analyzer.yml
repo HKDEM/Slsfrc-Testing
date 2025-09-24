@@ -1,3 +1,5 @@
+name: Salesforce Code Analyzer
+
 on:
   push:
     branches:
@@ -11,6 +13,7 @@ on:
 jobs:
   code-analysis:
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
       pull-requests: write
@@ -46,10 +49,25 @@ jobs:
           run-arguments: '--target "./force-app" --view detail --output-file sfca_results.json'
           results-artifact-name: salesforce-code-analyzer-results
 
+      # Generate SARIF file
       - name: Run Salesforce Code Analyzer Scan
         run: |
           sf code-analyzer run --output-file sfca_results.sarif
 
+      # 🔧 Rewrite SARIF tool name so it shows as "Salesforce Code Analyzer"
+      - name: Patch SARIF tool name
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = 'sfca_results.sarif';
+            let sarif = JSON.parse(fs.readFileSync(path, 'utf8'));
+            if (sarif.runs && sarif.runs[0]?.tool?.driver?.name) {
+              sarif.runs[0].tool.driver.name = 'Salesforce Code Analyzer';
+            }
+            fs.writeFileSync(path, JSON.stringify(sarif, null, 2));
+          "
+
+      # Upload SARIF to GitHub Security tab
       - name: Upload SARIF file to GitHub
         uses: github/codeql-action/upload-sarif@v3
         with:
@@ -67,19 +85,33 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const path = './sfca_results.json';
+            const path = './sfca_results.sarif';
 
             if (fs.existsSync(path)) {
               const results = JSON.parse(fs.readFileSync(path, 'utf8'));
               let message = "### 🔎 Salesforce Code Analyzer Results\n\n";
-              
-              if (results.violations && results.violations.length > 0) {
-                message += "| Severity | Rule | File | Line |\n";
-                message += "|----------|------|------|------|\n";
-                results.violations.forEach(v => {
-                  message += `| ${v.severity} | ${v.type} | ${v.file} | ${v.line} |\n`;
+
+              const runs = results.runs || [];
+              let count = 0;
+
+              runs.forEach(run => {
+                (run.results || []).forEach(r => {
+                  const rule = r.ruleId || "Unknown Rule";
+                  const severity = r.level || "warning";
+                  const location = r.locations?.[0]?.physicalLocation?.artifactLocation?.uri || "Unknown file";
+                  const line = r.locations?.[0]?.physicalLocation?.region?.startLine || "?";
+
+                  if (count === 0) {
+                    message += "| Severity | Rule | File | Line |\n";
+                    message += "|----------|------|------|------|\n";
+                  }
+
+                  message += `| ${severity} | ${rule} | ${location} | ${line} |\n`;
+                  count++;
                 });
-              } else {
+              });
+
+              if (count === 0) {
                 message += "✅ No violations found.";
               }
 
@@ -90,5 +122,5 @@ jobs:
                 body: message
               });
             } else {
-              console.log("sfca_results.json not found.");
+              console.log("sfca_results.sarif not found.");
             }
