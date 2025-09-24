@@ -1,34 +1,98 @@
 name: Salesforce Code Analyzer
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
-      - main
+      - master
+      - develop
 
 jobs:
-  analyze:
+  code-analysis:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      pull-requests: write
+      security-events: write   # ✅ Required for uploading SARIF
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - name: Set up Salesforce CLI
-        uses: amtrack/setup-sfdx-cli@v1
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          sfdx-cli-version: latest
+          node-version: '20'
 
-      - name: Install Code Analyzer plugin
-        run: sf plugins install code-analyzer
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'zulu'
 
-      - name: Run Code Analyzer
-        run: |
-          sf code-analyzer run --output-file sfca_results.sarif --view sarif
+      # ✅ Explicitly install Salesforce CLI
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli@latest
 
-      - name: Upload SARIF results
-        uses: github/codeql-action/upload-sarif@v2
+      # ✅ Explicitly install Code Analyzer plugin
+      - name: Install Salesforce Code Analyzer Plugin
+        run: sf plugins install code-analyzer@latest
+
+      # JSON output for PR comments
+      - name: Run Salesforce Code Analyzer (JSON)
+        id: run-code-analyzer-json
+        uses: forcedotcom/run-code-analyzer@v2.4.0
+        with:
+          run-arguments: '--target "./force-app" --view detail --format json --output-file sfca_results.json'
+          results-artifact-name: salesforce-code-analyzer-json
+
+      # SARIF output for Security tab
+      - name: Run Salesforce Code Analyzer (SARIF)
+        id: run-code-analyzer-sarif
+        uses: forcedotcom/run-code-analyzer@v2.4.0
+        with:
+          run-arguments: '--target "./force-app" --view summary --format sarif --output-file sfca_results.sarif'
+          results-artifact-name: salesforce-code-analyzer-sarif
+
+      - name: Upload SARIF results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: sfca_results.sarif
+
+      - name: Check for high severity violations
+        if: ${{ steps.run-code-analyzer-json.outputs.num-sev1-violations > 0 }}
+        run: |
+          echo "❌ Found high severity violations. Please fix before merging."
+          exit 1
+
+      - name: Post Code Analyzer results to PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = './sfca_results.json';
+
+            if (fs.existsSync(path)) {
+              const results = JSON.parse(fs.readFileSync(path, 'utf8'));
+              let message = "### 🔎 Salesforce Code Analyzer Results\n\n";
+              
+              if (results.violations && results.violations.length > 0) {
+                message += "| Severity | Rule | File | Line |\n";
+                message += "|----------|------|------|------|\n";
+                results.violations.forEach(v => {
+                  message += `| ${v.severity} | ${v.type} | ${v.file} | ${v.line} |\n`;
+                });
+              } else {
+                message += "✅ No violations found.";
+              }
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: message
+              });
+            } else {
+              console.log("sfca_results.json not found.");
+            }
