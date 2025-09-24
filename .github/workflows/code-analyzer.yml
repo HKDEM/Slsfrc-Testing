@@ -4,7 +4,7 @@ on:
   pull_request:
     branches:
       - master
-      - develop
+      - main
 
 jobs:
   code-analysis:
@@ -13,7 +13,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-      security-events: write   # ✅ Required for uploading SARIF
 
     steps:
       - name: Checkout Repository
@@ -38,29 +37,15 @@ jobs:
       - name: Install Salesforce Code Analyzer Plugin
         run: sf plugins install code-analyzer@latest
 
-      # JSON output for PR comments
-      - name: Run Salesforce Code Analyzer (JSON)
-        id: run-code-analyzer-json
+      - name: Run Salesforce Code Analyzer
+        id: run-code-analyzer
         uses: forcedotcom/run-code-analyzer@v2.4.0
         with:
-          run-arguments: '--target "./force-app" --view detail --format json --output-file sfca_results.json'
-          results-artifact-name: salesforce-code-analyzer-json
-
-      # SARIF output for Security tab
-      - name: Run Salesforce Code Analyzer (SARIF)
-        id: run-code-analyzer-sarif
-        uses: forcedotcom/run-code-analyzer@v2.4.0
-        with:
-          run-arguments: '--target "./force-app" --view summary --format sarif --output-file sfca_results.sarif'
-          results-artifact-name: salesforce-code-analyzer-sarif
-
-      - name: Upload SARIF results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: sfca_results.sarif
+          run-arguments: '--target "./force-app" --view detail --output-file sfca_results.json'
+          results-artifact-name: salesforce-code-analyzer-results
 
       - name: Check for high severity violations
-        if: ${{ steps.run-code-analyzer-json.outputs.num-sev1-violations > 0 }}
+        if: ${{ steps.run-code-analyzer.outputs.num-sev1-violations > 0 }}
         run: |
           echo "❌ Found high severity violations. Please fix before merging."
           exit 1
