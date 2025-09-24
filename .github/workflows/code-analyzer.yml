@@ -44,11 +44,11 @@ jobs:
           run-arguments: '--target "./force-app" --view detail --output-file sfca_results.json'
           results-artifact-name: salesforce-code-analyzer-results
 
-      - name: Run Salesforce Code Analyzer (SARIF output)
+      - name: Run Salesforce Code Analyzer Scan
         run: |
-          sf code-analyzer run --target "./force-app" --view detail --format sarif --output-file sfca_results.sarif
+          sf code-analyzer run --output-file sfca_results.sarif
 
-      - name: Upload SARIF file to GitHub Security tab
+      - name: Upload SARIF file to GitHub
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: sfca_results.sarif
