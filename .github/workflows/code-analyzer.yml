@@ -1,6 +1,8 @@
-name: Salesforce Code Analyzer
-
 on:
+  push:
+    branches:
+      - master
+      - main
   pull_request:
     branches:
       - master
@@ -9,10 +11,10 @@ on:
 jobs:
   code-analysis:
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
       pull-requests: write
+      security-events: write
 
     steps:
       - name: Checkout Repository
